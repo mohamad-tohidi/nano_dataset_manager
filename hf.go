@@ -29,7 +29,7 @@ func downloadFromHF(baseDir string, d *Dataset, token string) error {
 
 	client := &http.Client{Timeout: 30 * time.Minute}
 
-	siblings, err := listHFFiles(client, d.SourceRef, token)
+	siblings, repoType, err := listHFFiles(client, d.SourceRef, token)
 	if err != nil {
 		os.RemoveAll(dir)
 		return err
@@ -37,7 +37,7 @@ func downloadFromHF(baseDir string, d *Dataset, token string) error {
 
 	var totalSize int64
 	for _, s := range siblings {
-		n, err := downloadHFFile(client, d.SourceRef, s.Rfilename, dataDir, token)
+		n, err := downloadHFFile(client, d.SourceRef, s.Rfilename, dataDir, token, repoType)
 		if err != nil {
 			os.RemoveAll(dir)
 			return err
@@ -50,16 +50,34 @@ func downloadFromHF(baseDir string, d *Dataset, token string) error {
 	return nil
 }
 
-func listHFFiles(client *http.Client, repoID, token string) ([]hfSibling, error) {
-	url := fmt.Sprintf("https://huggingface.co/api/models/%s", repoID)
+func listHFFiles(client *http.Client, repoID, token string) ([]hfSibling, string, error) {
+	siblings, err := tryListRepo(client, "datasets", repoID, token)
+	if err == nil {
+		return siblings, "datasets", nil
+	}
+
+	siblings, err = tryListRepo(client, "models", repoID, token)
+	if err == nil {
+		return siblings, "models", nil
+	}
+
+	return nil, "", fmt.Errorf("repository %q not found as dataset or model", repoID)
+}
+
+func tryListRepo(client *http.Client, repoType, repoID, token string) ([]hfSibling, error) {
+	url := fmt.Sprintf("https://huggingface.co/api/%s/%s", repoType, repoID)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HF API request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("not found")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -72,14 +90,18 @@ func listHFFiles(client *http.Client, repoID, token string) ([]hfSibling, error)
 	}
 
 	if len(apiResp.Siblings) == 0 {
-		return nil, fmt.Errorf("no files found in repository")
+		return nil, fmt.Errorf("no files found")
 	}
 
 	return apiResp.Siblings, nil
 }
 
-func downloadHFFile(client *http.Client, repoID, filePath, dataDir, token string) (int64, error) {
+func downloadHFFile(client *http.Client, repoID, filePath, dataDir, token, repoType string) (int64, error) {
 	url := fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", repoID, filePath)
+	if repoType == "datasets" {
+		url = fmt.Sprintf("https://huggingface.co/datasets/%s/resolve/main/%s", repoID, filePath)
+	}
+
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 

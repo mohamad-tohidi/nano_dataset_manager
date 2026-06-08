@@ -22,6 +22,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /datasets/{id}", s.handleGet)
 	mux.HandleFunc("DELETE /datasets/{id}", s.handleDelete)
 	mux.HandleFunc("GET /health", s.handleHealth)
+	s.registerDocs(mux)
 	return mux
 }
 

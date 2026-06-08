@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# Project binary
+nano-dataset-manager
+
+# Runtime data (created on startup)
+data/
+
 # Editor/IDE
 # .idea/
 # .vscode/
